@@ -1,0 +1,19 @@
+{
+  "name": "@khulnasoft.com/json-schema",
+  "version": "1.0.0",
+  "private": false,
+  "description": "JSON-schema for Khulnasoft.com's main content type",
+  "main": "./dist/KhulnasoftContent.json",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "make all",
+    "clean": "make clean"
+  },
+  "author": "Dylan Kendal",
+  "license": "ISC",
+  "devDependencies": {
+    "prettier": "2.6.2",
+    "typescript": "4.6.3",
+    "typescript-json-schema": "0.53.0"
+  }
+}

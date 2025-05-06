@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Khulnasoft Support
+    url: https://www.khulnasoft.com/c/docs/help-and-support
+    about: Document on how to contact Khulnasoft support
+  - name: Khulnasoft Forum
+    url: https://forum.khulnasoft.com/
+    about: Forum for technical discussions and support

@@ -1,0 +1,1 @@
+# Khulnasoft.com plugin loader

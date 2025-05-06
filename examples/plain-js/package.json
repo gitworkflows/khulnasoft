@@ -1,0 +1,33 @@
+{
+  "name": "@khulnasoft.com/example-plain-js",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Khulnasoft.com example with plain JS",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/khulnasoft-com/khulnasoft.git"
+  },
+  "keywords": [
+    "khulnasoft.com",
+    "javascript",
+    "vanilla",
+    "client",
+    "sdk"
+  ],
+  "author": "Steve Sewell",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/khulnasoft-com/khulnasoft/issues"
+  },
+  "homepage": "https://github.com/khulnasoft-com/khulnasoft#readme",
+  "main": "index.html",
+  "scripts": {
+    "start": "parcel index.html --open",
+    "build": "parcel build index.html"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@babel/core": "7.2.0",
+    "parcel-bundler": "^1.6.1"
+  }
+}

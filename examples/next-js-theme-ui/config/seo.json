@@ -1,0 +1,11 @@
+{
+  "title": "Next.JS with theme-ui starter",
+  "titleTemplate": "%s - Demo",
+  "description": "A starter kit for demo site with Khulnasoft.com and themes",
+  "openGraph": {
+    "type": "website",
+    "locale": "en_IE",
+    "url": "https://github.com/khulnasoft-com/khulnasoft",
+    "site_name": "Khulnasoft.com + theme-ui + Next.js"
+  }
+}

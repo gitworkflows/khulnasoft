@@ -1,0 +1,1162 @@
+import { Khulnasoft, GetContentOptions } from './khulnasoft.class';
+import { BehaviorSubject } from './classes/observable.class';
+import { KhulnasoftContent } from './types/content';
+
+describe('Khulnasoft', () => {
+  test('trustedHosts', () => {
+    expect(Khulnasoft.isTrustedHost('localhost')).toBe(true);
+    expect(Khulnasoft.isTrustedHost('khulnasoft.com')).toBe(true);
+    expect(Khulnasoft.isTrustedHost('beta.khulnasoft.com')).toBe(true);
+    expect(Khulnasoft.isTrustedHost('qa.khulnasoft.com')).toBe(true);
+    expect(Khulnasoft.isTrustedHost('123-review-build.beta.khulnasoft.com')).toBe(true);
+  });
+
+  test('arbitrary khulnasoft.com subdomains', () => {
+    expect(Khulnasoft.isTrustedHost('cdn.khulnasoft.com')).toBe(false);
+    expect(Khulnasoft.isTrustedHost('foo.khulnasoft.com')).toBe(false);
+    expect(Khulnasoft.isTrustedHost('evildomainbeta.khulnasoft.com')).toBe(false);
+  });
+
+  test('add trusted host', () => {
+    expect(Khulnasoft.isTrustedHost('example.com')).toBe(false);
+    Khulnasoft.registerTrustedHost('example.com');
+    expect(Khulnasoft.isTrustedHost('example.com')).toBe(true);
+  });
+});
+
+describe('serializeIncludingFunctions', () => {
+  test('serializes functions in inputs', () => {
+    const input = {
+      name: 'TestComponent',
+      inputs: [
+        {
+          name: 'text',
+          type: 'string',
+          onChange: function (value: string) {
+            return value.toUpperCase();
+          },
+        },
+      ],
+    };
+
+    const result = Khulnasoft['serializeIncludingFunctions'](input);
+
+    expect(typeof result.inputs[0].onChange).toBe('string');
+    expect(result.inputs[0].onChange).toContain('return value.toUpperCase()');
+  });
+
+  test('serializes arrow functions in inputs', () => {
+    // Using eval and template literal to prevent TypeScript from adding parens
+    const fn = eval(`(${`e => !0 === e.get("isABTest")`})`);
+    const input = {
+      name: 'ArrowComponent',
+      inputs: [
+        {
+          name: 'number',
+          type: 'number',
+          onChange: (value: number) => value * 2,
+          showIf: fn,
+        },
+      ],
+    };
+
+    const result = Khulnasoft['serializeIncludingFunctions'](input);
+
+    expect(typeof result.inputs[0].onChange).toBe('string');
+    expect(result.inputs[0].onChange).toContain('value * 2');
+    expect(result.inputs[0].showIf).toBe(
+      `return (e => !0 === e.get(\"isABTest\")).apply(this, arguments)`
+    );
+  });
+
+  test('does not modify non-function properties', () => {
+    const input = {
+      name: 'MixedComponent',
+      inputs: [
+        {
+          name: 'text',
+          type: 'string',
+          defaultValue: 'hello',
+        },
+      ],
+    };
+
+    const result = Khulnasoft['serializeIncludingFunctions'](input);
+
+    expect(result).toEqual(input);
+  });
+
+  test('handles multiple inputs with mixed properties', () => {
+    const input = {
+      name: 'ComplexComponent',
+      inputs: [
+        {
+          name: 'text',
+          type: 'string',
+          onChange: (value: string) => value.trim(),
+        },
+        {
+          name: 'number',
+          type: 'number',
+          defaultValue: 42,
+        },
+        {
+          name: 'options',
+          type: 'string',
+          onChange: function (value: string[]) {
+            return value.map(v => v.toLowerCase());
+          },
+        },
+      ],
+    };
+
+    const result = Khulnasoft['serializeIncludingFunctions'](input);
+
+    expect(typeof result.inputs[0].onChange).toBe('string');
+    expect(result.inputs[0].onChange).toContain('value.trim()');
+
+    expect(result.inputs[1]).toEqual(input.inputs[1]);
+
+    expect(typeof result.inputs[2].onChange).toBe('string');
+    expect(result.inputs[2].onChange).toContain('v.toLowerCase()');
+  });
+
+  test('serializes arrow functions with non-parenthesized args in inputs', () => {
+    // Using eval and template literal to prevent TypeScript from adding parens
+    const fn = eval(`(${`e => !0 === e.get("isABTest")`})`);
+    const input = {
+      name: 'onChangeComponent',
+      inputs: [
+        {
+          name: 'number',
+          type: 'number',
+          // @ts-expect-error required for this test
+          onChange: value => value * 2,
+          showIf: fn,
+        },
+      ],
+    };
+
+    const result = Khulnasoft['serializeIncludingFunctions'](input);
+
+    expect(typeof result.inputs[0].onChange).toBe('string');
+    expect(result.inputs[0].onChange).toBe(`return ((value) => value * 2).apply(this, arguments)`);
+  });
+
+  test('serializes functions with parenthesized args in inputs', () => {
+    // Using eval and template literal to prevent TypeScript from adding parens
+    const fn = eval(`(${`e => !0 === e.get("isABTest")`})`);
+    const input = {
+      name: 'onChangeComponent',
+      inputs: [
+        {
+          name: 'number',
+          type: 'number',
+          onChange: function (value: number) {
+            return value * 2;
+          },
+          showIf: fn,
+        },
+      ],
+    };
+
+    const result = Khulnasoft['serializeIncludingFunctions'](input);
+
+    expect(typeof result.inputs[0].onChange).toBe('string');
+    expect(result.inputs[0].onChange).toBe(
+      `return (function(value) {
+            return value * 2;
+          }).apply(this, arguments)`
+    );
+  });
+
+  test('serializes async functions with parenthesized args in inputs', () => {
+    // Using eval and template literal to prevent TypeScript from adding parens
+    const fn = eval(`(${`e => !0 === e.get("isABTest")`})`);
+    const input = {
+      name: 'AsyncOnChangeComponent',
+      inputs: [
+        {
+          name: 'number',
+          type: 'number',
+          onChange: async function (value: number) {
+            return value * 2;
+          },
+          showIf: fn,
+        },
+      ],
+    };
+
+    const result = Khulnasoft['serializeIncludingFunctions'](input);
+
+    expect(typeof result.inputs[0].onChange).toBe('string');
+    expect(result.inputs[0].onChange).toBe(
+      `return (async function(value) {
+            return value * 2;
+          }).apply(this, arguments)`
+    );
+  });
+
+  test('serializes async arrow functions with parenthesized args in inputs', () => {
+    // Using eval and template literal to prevent TypeScript from adding parens
+    const fn = eval(`(${`e => !0 === e.get("isABTest")`})`);
+    const input = {
+      name: 'AsyncOnChangeComponent',
+      inputs: [
+        {
+          name: 'number',
+          type: 'number',
+          onChange: async (value: number) => value * 2,
+          showIf: fn,
+        },
+      ],
+    };
+
+    const result = Khulnasoft['serializeIncludingFunctions'](input);
+
+    expect(typeof result.inputs[0].onChange).toBe('string');
+    expect(result.inputs[0].onChange).toBe(
+      'return (async (value) => value * 2).apply(this, arguments)'
+    );
+  });
+
+  test('serializes async arrow functions without parenthesized args in inputs', () => {
+    // Using eval and template literal to prevent TypeScript from adding parens
+    const fn = eval(`(${`e => !0 === e.get("isABTest")`})`);
+    const input = {
+      name: 'AsyncOnChangeComponent',
+      inputs: [
+        {
+          name: 'number',
+          type: 'number',
+          // @ts-expect-error
+          onChange: async value => value * 2,
+          showIf: fn,
+        },
+      ],
+    };
+
+    const result = Khulnasoft['serializeIncludingFunctions'](input);
+
+    expect(typeof result.inputs[0].onChange).toBe('string');
+    expect(result.inputs[0].onChange).toBe(
+      'return (async (value) => value * 2).apply(this, arguments)'
+    );
+  });
+
+  test('does not serialize onSave function when isForPlugin is true', () => {
+    const onSaveFn = function (data: any) {
+      return data;
+    };
+    const input = {
+      name: 'PluginComponent',
+      inputs: [
+        {
+          name: 'text',
+          type: 'string',
+          onChange: function (value: string) {
+            return value.toUpperCase();
+          },
+        },
+      ],
+      onSave: onSaveFn,
+    };
+
+    const result = Khulnasoft['serializeIncludingFunctions'](input, true);
+
+    // Check that onChange was serialized to a string
+    expect(typeof result.inputs[0].onChange).toBe('string');
+    expect(result.inputs[0].onChange).toContain('value.toUpperCase()');
+
+    // Check that onSave was preserved as a function
+    expect(typeof result.onSave).toBe('function');
+    expect(result.onSave).toBe(onSaveFn);
+  });
+
+  test('serializes all functions when isForPlugin is false', () => {
+    const onSaveFn = function (data: any) {
+      return data;
+    };
+    const input = {
+      name: 'PluginComponent',
+      inputs: [
+        {
+          name: 'text',
+          type: 'string',
+          onChange: function (value: string) {
+            return value.toUpperCase();
+          },
+        },
+      ],
+      onSave: onSaveFn,
+    };
+
+    const result = Khulnasoft['serializeIncludingFunctions'](input, false);
+
+    // Check that all functions were serialized to strings
+    expect(typeof result.inputs[0].onChange).toBe('string');
+    expect(result.inputs[0].onChange).toContain('value.toUpperCase()');
+    expect(typeof result.onSave).toBe('string');
+  });
+
+  test('serializes top-level functions when isForPlugin is true except onSave', () => {
+    const onSaveFn = function (data: any) {
+      return data;
+    };
+    const validateFn = function (data: any) {
+      return data.isValid;
+    };
+
+    const input = {
+      name: 'PluginComponent',
+      validate: validateFn,
+      onSave: onSaveFn,
+    };
+
+    const result = Khulnasoft['serializeIncludingFunctions'](input, true);
+
+    // Check that validate was serialized
+    expect(typeof result.validate).toBe('string');
+    expect(result.validate).toContain('return data.isValid');
+
+    // Check that onSave was preserved as a function
+    expect(typeof result.onSave).toBe('function');
+    expect(result.onSave).toBe(onSaveFn);
+  });
+
+  test('preserves onSave function in both input and output when isForPlugin is true', () => {
+    const onSaveFn = function (data: any) {
+      console.log('Saving data');
+      return (data.modified = true);
+    };
+
+    const input = {
+      name: 'PluginWithOnSave',
+      onSave: onSaveFn,
+    };
+
+    const result = Khulnasoft['serializeIncludingFunctions'](input, true);
+
+    // Verify the function is the same reference
+    expect(result.onSave).toBe(input.onSave);
+
+    // Verify behavior is preserved by calling the function
+    const testData: any = { value: 'test' };
+    result.onSave(testData);
+    expect(testData.modified).toBe(true);
+  });
+});
+
+describe('prepareComponentSpecToSend', () => {
+  test('removes class property and serializes functions in inputs', () => {
+    const input = {
+      name: 'TestComponent',
+      class: class TestClass {},
+      inputs: [
+        {
+          name: 'text',
+          type: 'string',
+          onChange: function (value: string) {
+            return value.toUpperCase();
+          },
+        },
+      ],
+    };
+
+    const result = Khulnasoft['prepareComponentSpecToSend'](input);
+
+    expect(result.class).toBeUndefined();
+    expect(typeof result.inputs?.[0].onChange).toBe('string');
+    expect(result.inputs?.[0].onChange).toContain('value.toUpperCase()');
+  });
+
+  test('preserves other properties', () => {
+    const input = {
+      name: 'ComplexComponent',
+      class: class ComplexClass {},
+      inputs: [
+        {
+          name: 'text',
+          type: 'string',
+          defaultValue: 'hello',
+          onChange: (value: string) => value.trim(),
+        },
+        {
+          name: 'number',
+          type: 'number',
+          defaultValue: 42,
+        },
+      ],
+    };
+
+    const result = Khulnasoft['prepareComponentSpecToSend'](input);
+
+    expect(result.class).toBeUndefined();
+    expect(result.name).toBe('ComplexComponent');
+    expect(result.inputs?.length).toBe(2);
+    expect(typeof result.inputs?.[0].onChange).toBe('string');
+    expect(result.inputs?.[0].onChange).toContain('value.trim()');
+    expect(result.inputs?.[0].defaultValue).toBe('hello');
+    expect(result.inputs?.[1]).toEqual(input.inputs[1]);
+  });
+});
+
+describe('flushGetContentQueue', () => {
+  const API_KEY = '25608a566fbb654ea959c1b1729e370d';
+  const MODEL = 'page';
+  const AUTH_TOKEN = '82202e99f9fb4ed1da5940f7fa191e72';
+  const OMIT = 'data.blocks';
+
+  let khulnasoft: Khulnasoft;
+
+  const codegenOrQueryApiResult = {
+    [MODEL]: [
+      {
+        lastUpdatedBy: 'vkEwLBAcR1VHNUy7DDD366ffYjQ2',
+        folders: [],
+        data: {
+          themeId: false,
+          title: 'test',
+          blocks: [
+            {
+              '@type': '@khulnasoft.com/sdk:Element',
+              '@version': 2,
+              id: 'khulnasoft-370f0829496c41d48b1fb77c1b4ea2b2',
+              component: {
+                name: 'Text',
+                options: {
+                  text: 'A is selected',
+                },
+              },
+              responsiveStyles: {
+                large: {
+                  display: 'flex',
+                  flexDirection: 'column',
+                  position: 'relative',
+                  flexShrink: '0',
+                  boxSizing: 'border-box',
+                  marginTop: '20px',
+                  lineHeight: 'normal',
+                  height: 'auto',
+                },
+              },
+            },
+            {
+              id: 'khulnasoft-pixel-lrwo8ns32dg',
+              '@type': '@khulnasoft.com/sdk:Element',
+              tagName: 'img',
+              properties: {
+                src: 'https://cdn.khulnasoft.com/api/v1/pixel?apiKey=5271c255f7824802a30f12bdad90e347',
+                'aria-hidden': 'true',
+                alt: '',
+                role: 'presentation',
+                width: '0',
+                height: '0',
+              },
+              responsiveStyles: {
+                large: {
+                  height: '0',
+                  width: '0',
+                  display: 'inline-block',
+                  opacity: '0',
+                  overflow: 'hidden',
+                  pointerEvents: 'none',
+                },
+              },
+            },
+          ],
+          url: '/test',
+          state: {
+            deviceSize: 'large',
+            location: {
+              pathname: '/test',
+              path: ['test'],
+              query: {},
+            },
+          },
+        },
+        modelId: '12518e35051e42dda999e91f1162f0bd',
+        query: [
+          {
+            '@type': '@khulnasoft.com/core:Query',
+            property: 'urlPath',
+            value: '/test',
+            operator: 'is',
+          },
+          {
+            '@type': '@khulnasoft.com/core:Query',
+            property: 'name',
+            value: ['a'],
+            operator: 'is',
+          },
+        ],
+        published: 'published',
+        firstPublished: 1725450385400,
+        testRatio: 1,
+        lastUpdated: 1725451287436,
+        createdDate: 1725450170945,
+        createdBy: 'vkEwLBAcR1VHNUy7DDD366ffYjQ2',
+        meta: {
+          lastPreviewUrl:
+            'http://localhost:5173/test?khulnasoft.space=5271c255f7824802a30f12bdad90e347&khulnasoft.user.permissions=read%2Ccreate%2Cpublish%2CeditCode%2CeditDesigns%2Cadmin%2CeditLayouts%2CeditLayers&khulnasoft.user.role.name=Admin&khulnasoft.user.role.id=admin&khulnasoft.cachebust=true&khulnasoft.preview=page&khulnasoft.noCache=true&khulnasoft.allowTextEdit=true&__khulnasoft_editing__=true&khulnasoft.overrides.page=ad03bbebf34b49a9912aeae629571db7&khulnasoft.overrides.ad03bbebf34b49a9912aeae629571db7=ad03bbebf34b49a9912aeae629571db7&khulnasoft.overrides.page:/test=ad03bbebf34b49a9912aeae629571db7&khulnasoft.options.locale=Default',
+          kind: 'page',
+          hasLinks: false,
+        },
+        variations: {},
+        name: 'test',
+        id: 'ad03bbebf34b49a9912aeae629571db7',
+        rev: '9inkgroan7l',
+      },
+    ],
+  };
+
+  const contentApiResult = {
+    results: [
+      {
+        lastUpdatedBy: 'vkEwLBAcR1VHNUy7DDD366ffYjQ2',
+        folders: [],
+        data: {
+          themeId: false,
+          title: 'test',
+          blocks: [],
+          url: '/test',
+          state: {
+            deviceSize: 'large',
+            location: {
+              path: '',
+              query: {},
+            },
+          },
+        },
+        modelId: '12518e35051e42dda999e91f1162f0bd',
+        query: [
+          {
+            '@type': '@khulnasoft.com/core:Query',
+            property: 'urlPath',
+            value: '/test',
+            operator: 'is',
+          },
+          {
+            '@type': '@khulnasoft.com/core:Query',
+            property: 'name',
+            value: ['a'],
+            operator: 'is',
+          },
+        ],
+        published: 'published',
+        firstPublished: 1725450385400,
+        testRatio: 1,
+        lastUpdated: 1725451287436,
+        createdDate: 1725450170945,
+        createdBy: 'vkEwLBAcR1VHNUy7DDD366ffYjQ2',
+        meta: {
+          lastPreviewUrl:
+            'http://localhost:5173/test?khulnasoft.space=5271c255f7824802a30f12bdad90e347&khulnasoft.user.permissions=read%2Ccreate%2Cpublish%2CeditCode%2CeditDesigns%2Cadmin%2CeditLayouts%2CeditLayers&khulnasoft.user.role.name=Admin&khulnasoft.user.role.id=admin&khulnasoft.cachebust=true&khulnasoft.preview=page&khulnasoft.noCache=true&khulnasoft.allowTextEdit=true&__khulnasoft_editing__=true&khulnasoft.overrides.page=ad03bbebf34b49a9912aeae629571db7&khulnasoft.overrides.ad03bbebf34b49a9912aeae629571db7=ad03bbebf34b49a9912aeae629571db7&khulnasoft.overrides.page:/test=ad03bbebf34b49a9912aeae629571db7&khulnasoft.options.locale=Default',
+          kind: 'page',
+          hasLinks: false,
+        },
+        variations: {},
+        name: 'test',
+        id: 'ad03bbebf34b49a9912aeae629571db7',
+        rev: 'kvr9rrrklws',
+      },
+      {
+        createdDate: 1725363956284,
+        data: {
+          title: 'Khulnasoft + React Demo Page',
+          blocks: [],
+          url: ['/khulnasoft-demo'],
+          state: {
+            deviceSize: 'large',
+            location: {
+              path: '',
+              query: {},
+            },
+          },
+        },
+        modelId: '12518e35051e42dda999e91f1162f0bd',
+        query: [
+          {
+            property: 'urlPath',
+            value: ['/khulnasoft-demo'],
+            operator: 'is',
+          },
+        ],
+        name: 'Khulnasoft + React Demo Page',
+        id: '87853dcacee64c4a9b573faa46823e61',
+        published: 'published',
+        meta: {},
+        rev: 'kvr9rrrklws',
+      },
+      {
+        lastUpdatedBy: 'vkEwLBAcR1VHNUy7DDD366ffYjQ2',
+        folders: [],
+        data: {
+          themeId: false,
+          title: 'Test Page',
+          blocks: [],
+          url: '/test-page',
+          state: {
+            deviceSize: 'large',
+            location: {
+              path: '',
+              query: {},
+            },
+          },
+        },
+        modelId: '12518e35051e42dda999e91f1162f0bd',
+        query: [
+          {
+            '@type': '@khulnasoft.com/core:Query',
+            property: 'urlPath',
+            value: '/test-page',
+            operator: 'is',
+          },
+        ],
+        published: 'published',
+        firstPublished: 1722527310201,
+        testRatio: 1,
+        lastUpdated: 1722528875919,
+        createdDate: 1722527254768,
+        createdBy: 'vkEwLBAcR1VHNUy7DDD366ffYjQ2',
+        meta: {
+          kind: 'page',
+          lastPreviewUrl:
+            'http://localhost:3000/test-page?khulnasoft.space=5271c255f7824802a30f12bdad90e347&khulnasoft.user.permissions=read%2Ccreate%2Cpublish%2CeditCode%2CeditDesigns%2Cadmin%2CeditLayouts%2CeditLayers&khulnasoft.user.role.name=Admin&khulnasoft.user.role.id=admin&khulnasoft.cachebust=true&khulnasoft.preview=page&khulnasoft.noCache=true&khulnasoft.allowTextEdit=true&__khulnasoft_editing__=true&khulnasoft.overrides.page=e53863a02641455294ac59ab7e2be643&khulnasoft.overrides.e53863a02641455294ac59ab7e2be643=e53863a02641455294ac59ab7e2be643&khulnasoft.overrides.page:/test-page=e53863a02641455294ac59ab7e2be643',
+          hasLinks: false,
+        },
+        variations: {},
+        name: 'Test Page',
+        id: 'e53863a02641455294ac59ab7e2be643',
+        rev: 'kvr9rrrklws',
+      },
+    ],
+  };
+
+  beforeEach(() => {
+    khulnasoft = new Khulnasoft(API_KEY, undefined, undefined, false, AUTH_TOKEN, 'v3');
+
+    const khulnasoftSubject = new BehaviorSubject<KhulnasoftContent[]>([]);
+    khulnasoftSubject.next = jest.fn(() => {});
+    khulnasoft.observersByKey[MODEL] = khulnasoftSubject;
+    khulnasoft['makeFetchApiCall'] = jest.fn((url: string) => {
+      const result =
+        url.includes('/codegen/') || url.includes('/query/')
+          ? codegenOrQueryApiResult
+          : contentApiResult;
+      return Promise.resolve({
+        json: () => {
+          return Promise.resolve(result);
+        },
+      });
+    });
+  });
+
+  test('throws error if apiKey is not defined', () => {
+    khulnasoft = new Khulnasoft();
+    try {
+      khulnasoft['flushGetContentQueue']();
+    } catch (err: any) {
+      expect(err.message).toBe(
+        'Fetching content failed, expected apiKey to be defined instead got: null'
+      );
+    }
+  });
+
+  test('throws error if apiVersion is not v3', () => {
+    khulnasoft = new Khulnasoft(API_KEY, undefined, undefined, false, AUTH_TOKEN, 'v1');
+
+    try {
+      khulnasoft['flushGetContentQueue']();
+    } catch (err: any) {
+      expect(err.message).toBe("Invalid apiVersion: expected 'v3', received 'v1'");
+    }
+  });
+
+  test("hits codegen url when format is 'solid'", async () => {
+    const expectedFormat = 'solid';
+
+    const result = await khulnasoft['flushGetContentQueue'](true, [
+      {
+        model: MODEL,
+        format: expectedFormat,
+        key: MODEL,
+        userAttributes: { respectScheduling: true },
+        omit: OMIT,
+        fields: 'data',
+      },
+    ]);
+
+    const observerNextMock = khulnasoft.observersByKey[MODEL]?.next as jest.Mock;
+
+    expect(observerNextMock).toBeCalledTimes(1);
+    expect(observerNextMock.mock.calls[0][0][0]).toStrictEqual({
+      ...codegenOrQueryApiResult[MODEL][0],
+      variationId: expect.any(String),
+    });
+
+    expect(khulnasoft['makeFetchApiCall']).toBeCalledTimes(1);
+    expect(khulnasoft['makeFetchApiCall']).toBeCalledWith(
+      `https://cdn.khulnasoft.com/api/v1/codegen/${API_KEY}/${MODEL}?omit=${OMIT}&apiKey=${API_KEY}&fields=data&format=solid&userAttributes=%7B%22respectScheduling%22%3Atrue%7D&options.${MODEL}.model=%22${MODEL}%22`,
+      { headers: { Authorization: `Bearer ${AUTH_TOKEN}` } }
+    );
+  });
+
+  test("hits codegen url when format is 'react'", async () => {
+    const expectedFormat = 'react';
+
+    const result = await khulnasoft['flushGetContentQueue'](true, [
+      {
+        model: MODEL,
+        format: expectedFormat,
+        key: MODEL,
+        userAttributes: { respectScheduling: true },
+        omit: OMIT,
+        fields: 'data',
+      },
+    ]);
+
+    const observerNextMock = khulnasoft.observersByKey[MODEL]?.next as jest.Mock;
+
+    expect(observerNextMock).toBeCalledTimes(1);
+    expect(observerNextMock.mock.calls[0][0][0]).toStrictEqual({
+      ...codegenOrQueryApiResult[MODEL][0],
+      variationId: expect.any(String),
+    });
+    expect(khulnasoft['makeFetchApiCall']).toBeCalledTimes(1);
+    expect(khulnasoft['makeFetchApiCall']).toBeCalledWith(
+      `https://cdn.khulnasoft.com/api/v1/codegen/${API_KEY}/${MODEL}?omit=${OMIT}&apiKey=${API_KEY}&fields=data&format=react&userAttributes=%7B%22respectScheduling%22%3Atrue%7D&options.${MODEL}.model=%22${MODEL}%22`,
+      { headers: { Authorization: `Bearer ${AUTH_TOKEN}` } }
+    );
+  });
+
+  test("hits query url when apiEndpoint is undefined and format is 'html'", async () => {
+    const expectedFormat = 'html';
+
+    const result = await khulnasoft['flushGetContentQueue'](true, [
+      {
+        model: MODEL,
+        format: expectedFormat,
+        key: MODEL,
+        userAttributes: { respectScheduling: true },
+        omit: OMIT,
+        fields: 'data',
+      },
+    ]);
+
+    const observerNextMock = khulnasoft.observersByKey[MODEL]?.next as jest.Mock;
+
+    expect(observerNextMock).toBeCalledTimes(1);
+    expect(observerNextMock.mock.calls[0][0][0]).toStrictEqual({
+      ...codegenOrQueryApiResult[MODEL][0],
+      variationId: expect.any(String),
+    });
+    expect(khulnasoft['makeFetchApiCall']).toBeCalledTimes(1);
+    expect(khulnasoft['makeFetchApiCall']).toBeCalledWith(
+      `https://cdn.khulnasoft.com/api/v3/query/${API_KEY}/${MODEL}?omit=${OMIT}&apiKey=${API_KEY}&fields=data&format=${expectedFormat}&userAttributes=%7B%22respectScheduling%22%3Atrue%7D&options.${MODEL}.model=%22${MODEL}%22`,
+      { headers: { Authorization: `Bearer ${AUTH_TOKEN}` } }
+    );
+  });
+
+  test("hits content url when apiEndpoint is 'content' and format is 'html'", async () => {
+    const expectedFormat = 'html';
+
+    khulnasoft.apiEndpoint = 'content';
+    const result = await khulnasoft['flushGetContentQueue'](true, [
+      {
+        model: MODEL,
+        format: expectedFormat,
+        key: MODEL,
+        userAttributes: { respectScheduling: true },
+        omit: OMIT,
+        fields: 'data',
+        limit: 10,
+      },
+    ]);
+
+    const observerNextMock = khulnasoft.observersByKey[MODEL]?.next as jest.Mock;
+
+    expect(observerNextMock).toBeCalledTimes(1);
+    expect(observerNextMock.mock.calls[0][0][0]).toStrictEqual({
+      ...contentApiResult.results[0],
+      variationId: expect.any(String),
+    });
+    expect(observerNextMock.mock.calls[0][0][1]).toStrictEqual({
+      ...contentApiResult.results[1],
+    });
+    expect(observerNextMock.mock.calls[0][0][2]).toStrictEqual({
+      ...contentApiResult.results[2],
+      variationId: expect.any(String),
+    });
+
+    expect(khulnasoft['makeFetchApiCall']).toBeCalledTimes(1);
+    expect(khulnasoft['makeFetchApiCall']).toBeCalledWith(
+      `https://cdn.khulnasoft.com/api/v3/content/${MODEL}?omit=data.blocks&apiKey=${API_KEY}&fields=data&format=${expectedFormat}&userAttributes=%7B%22respectScheduling%22%3Atrue%7D&includeRefs=true&limit=10&model=%22${MODEL}%22`,
+      { headers: { Authorization: `Bearer ${AUTH_TOKEN}` } }
+    );
+  });
+
+  test("hits query url when apiEndpoint is undefined and format is 'amp'", async () => {
+    const expectedFormat = 'amp';
+
+    const result = await khulnasoft['flushGetContentQueue'](true, [
+      {
+        model: MODEL,
+        format: expectedFormat,
+        key: MODEL,
+        userAttributes: { respectScheduling: true },
+        omit: OMIT,
+        fields: 'data',
+      },
+    ]);
+
+    const observerNextMock = khulnasoft.observersByKey[MODEL]?.next as jest.Mock;
+
+    expect(observerNextMock).toBeCalledTimes(1);
+    expect(observerNextMock.mock.calls[0][0][0]).toStrictEqual({
+      ...codegenOrQueryApiResult[MODEL][0],
+      variationId: expect.any(String),
+    });
+    expect(khulnasoft['makeFetchApiCall']).toBeCalledTimes(1);
+    expect(khulnasoft['makeFetchApiCall']).toBeCalledWith(
+      `https://cdn.khulnasoft.com/api/v3/query/${API_KEY}/${MODEL}?omit=${OMIT}&apiKey=${API_KEY}&fields=data&format=${expectedFormat}&userAttributes=%7B%22respectScheduling%22%3Atrue%7D&options.${MODEL}.model=%22${MODEL}%22`,
+      { headers: { Authorization: `Bearer ${AUTH_TOKEN}` } }
+    );
+  });
+
+  test("hits content url when apiEndpoint is 'content' and format is 'amp'", async () => {
+    const expectedFormat = 'amp';
+
+    khulnasoft.apiEndpoint = 'content';
+    const result = await khulnasoft['flushGetContentQueue'](true, [
+      {
+        model: MODEL,
+        format: expectedFormat,
+        key: MODEL,
+        userAttributes: { respectScheduling: true },
+        omit: OMIT,
+        fields: 'data',
+        limit: 10,
+      },
+    ]);
+
+    const observerNextMock = khulnasoft.observersByKey[MODEL]?.next as jest.Mock;
+
+    expect(observerNextMock).toBeCalledTimes(1);
+    expect(observerNextMock.mock.calls[0][0][0]).toStrictEqual({
+      ...contentApiResult.results[0],
+      variationId: expect.any(String),
+    });
+    expect(observerNextMock.mock.calls[0][0][1]).toStrictEqual({
+      ...contentApiResult.results[1],
+    });
+    expect(observerNextMock.mock.calls[0][0][2]).toStrictEqual({
+      ...contentApiResult.results[2],
+      variationId: expect.any(String),
+    });
+
+    expect(khulnasoft['makeFetchApiCall']).toBeCalledTimes(1);
+    expect(khulnasoft['makeFetchApiCall']).toBeCalledWith(
+      `https://cdn.khulnasoft.com/api/v3/content/${MODEL}?omit=data.blocks&apiKey=${API_KEY}&fields=data&format=${expectedFormat}&userAttributes=%7B%22respectScheduling%22%3Atrue%7D&includeRefs=true&limit=10&model=%22${MODEL}%22`,
+      { headers: { Authorization: `Bearer ${AUTH_TOKEN}` } }
+    );
+  });
+
+  test("hits query url when apiEndpoint is undefined and format is 'email'", async () => {
+    const expectedFormat = 'email';
+
+    const result = await khulnasoft['flushGetContentQueue'](true, [
+      {
+        model: MODEL,
+        format: expectedFormat,
+        key: MODEL,
+        userAttributes: { respectScheduling: true },
+        omit: OMIT,
+        fields: 'data',
+      },
+    ]);
+
+    const observerNextMock = khulnasoft.observersByKey[MODEL]?.next as jest.Mock;
+
+    expect(observerNextMock).toBeCalledTimes(1);
+    expect(observerNextMock.mock.calls[0][0][0]).toStrictEqual({
+      ...codegenOrQueryApiResult[MODEL][0],
+      variationId: expect.any(String),
+    });
+    expect(khulnasoft['makeFetchApiCall']).toBeCalledTimes(1);
+    expect(khulnasoft['makeFetchApiCall']).toBeCalledWith(
+      `https://cdn.khulnasoft.com/api/v3/query/${API_KEY}/${MODEL}?omit=${OMIT}&apiKey=${API_KEY}&fields=data&format=${expectedFormat}&userAttributes=%7B%22respectScheduling%22%3Atrue%7D&options.${MODEL}.model=%22${MODEL}%22`,
+      { headers: { Authorization: `Bearer ${AUTH_TOKEN}` } }
+    );
+  });
+
+  test("hits query url when apiEndpoint is undefined and format is 'email' and url is passed instead of userAttributes", async () => {
+    const expectedFormat = 'email';
+
+    const result = await khulnasoft['flushGetContentQueue'](true, [
+      {
+        model: MODEL,
+        format: expectedFormat,
+        key: MODEL,
+        url: '/test-page',
+        omit: OMIT,
+        fields: 'data',
+      },
+    ]);
+
+    const observerNextMock = khulnasoft.observersByKey[MODEL]?.next as jest.Mock;
+
+    expect(observerNextMock).toBeCalledTimes(1);
+    expect(observerNextMock.mock.calls[0][0][0]).toStrictEqual({
+      ...codegenOrQueryApiResult[MODEL][0],
+      variationId: expect.any(String),
+    });
+    expect(khulnasoft['makeFetchApiCall']).toBeCalledTimes(1);
+    expect(khulnasoft['makeFetchApiCall']).toBeCalledWith(
+      `https://cdn.khulnasoft.com/api/v3/query/${API_KEY}/${MODEL}?omit=${OMIT}&apiKey=${API_KEY}&fields=data&format=${expectedFormat}&userAttributes=%7B%22urlPath%22%3A%22%2Ftest-page%22%2C%22host%22%3A%22localhost%22%2C%22device%22%3A%22desktop%22%7D&options.${MODEL}.model=%22${MODEL}%22`,
+      { headers: { Authorization: `Bearer ${AUTH_TOKEN}` } }
+    );
+  });
+
+  test("hits content url when apiEndpoint is 'content' and format is 'email'", async () => {
+    const expectedFormat = 'email';
+
+    khulnasoft.apiEndpoint = 'content';
+    const result = await khulnasoft['flushGetContentQueue'](true, [
+      {
+        model: MODEL,
+        format: expectedFormat,
+        key: MODEL,
+        userAttributes: { respectScheduling: true },
+        omit: OMIT,
+        fields: 'data',
+        limit: 10,
+      },
+    ]);
+
+    const observerNextMock = khulnasoft.observersByKey[MODEL]?.next as jest.Mock;
+
+    expect(observerNextMock).toBeCalledTimes(1);
+    expect(observerNextMock.mock.calls[0][0][0]).toStrictEqual({
+      ...contentApiResult.results[0],
+      variationId: expect.any(String),
+    });
+    expect(observerNextMock.mock.calls[0][0][1]).toStrictEqual({
+      ...contentApiResult.results[1],
+    });
+    expect(observerNextMock.mock.calls[0][0][2]).toStrictEqual({
+      ...contentApiResult.results[2],
+      variationId: expect.any(String),
+    });
+
+    expect(khulnasoft['makeFetchApiCall']).toBeCalledTimes(1);
+    expect(khulnasoft['makeFetchApiCall']).toBeCalledWith(
+      `https://cdn.khulnasoft.com/api/v3/content/${MODEL}?omit=data.blocks&apiKey=${API_KEY}&fields=data&format=${expectedFormat}&userAttributes=%7B%22respectScheduling%22%3Atrue%7D&includeRefs=true&limit=10&model=%22${MODEL}%22`,
+      { headers: { Authorization: `Bearer ${AUTH_TOKEN}` } }
+    );
+  });
+
+  test("hits content url when apiEndpoint is 'content' and format is 'email' and url is passed instead of userAttributes", async () => {
+    const expectedFormat = 'email';
+
+    khulnasoft.apiEndpoint = 'content';
+    const result = await khulnasoft['flushGetContentQueue'](true, [
+      {
+        model: MODEL,
+        format: expectedFormat,
+        key: MODEL,
+        url: '/test-page',
+        omit: OMIT,
+        fields: 'data',
+        limit: 10,
+      },
+    ]);
+
+    const observerNextMock = khulnasoft.observersByKey[MODEL]?.next as jest.Mock;
+
+    expect(observerNextMock).toBeCalledTimes(1);
+    expect(observerNextMock.mock.calls[0][0][0]).toStrictEqual({
+      ...contentApiResult.results[0],
+      variationId: expect.any(String),
+    });
+    expect(observerNextMock.mock.calls[0][0][1]).toStrictEqual({
+      ...contentApiResult.results[1],
+    });
+    expect(observerNextMock.mock.calls[0][0][2]).toStrictEqual({
+      ...contentApiResult.results[2],
+      variationId: expect.any(String),
+    });
+
+    expect(khulnasoft['makeFetchApiCall']).toBeCalledTimes(1);
+    expect(khulnasoft['makeFetchApiCall']).toBeCalledWith(
+      `https://cdn.khulnasoft.com/api/v3/content/${MODEL}?omit=data.blocks&apiKey=${API_KEY}&fields=data&format=${expectedFormat}&userAttributes=%7B%22urlPath%22%3A%22%2Ftest-page%22%2C%22host%22%3A%22localhost%22%2C%22device%22%3A%22desktop%22%7D&includeRefs=true&limit=10&model=%22${MODEL}%22`,
+      { headers: { Authorization: `Bearer ${AUTH_TOKEN}` } }
+    );
+  });
+
+  test('hits content url with query.id when id is passed in options.query', async () => {
+    const expectedModel = 'symbol';
+    const expectedFormat = 'email';
+    const expectedEntryId = '123';
+
+    khulnasoft.apiEndpoint = 'content';
+    const result = await khulnasoft['flushGetContentQueue'](true, [
+      {
+        model: expectedModel,
+        format: expectedFormat,
+        key: expectedModel,
+        omit: OMIT,
+        fields: 'data',
+        limit: 10,
+        entry: expectedEntryId,
+        query: {
+          id: expectedEntryId,
+        },
+      },
+    ]);
+
+    expect(khulnasoft['makeFetchApiCall']).toBeCalledTimes(1);
+    expect(khulnasoft['makeFetchApiCall']).toBeCalledWith(
+      `https://cdn.khulnasoft.com/api/v3/content/${expectedModel}?omit=data.blocks&apiKey=${API_KEY}&fields=data&format=${expectedFormat}&userAttributes=%7B%22urlPath%22%3A%22%2F%22%2C%22host%22%3A%22localhost%22%2C%22device%22%3A%22desktop%22%7D&includeRefs=true&limit=10&model=%22${expectedModel}%22&entry=%22${expectedEntryId}%22&query.id=${expectedEntryId}`,
+      { headers: { Authorization: `Bearer ${AUTH_TOKEN}` } }
+    );
+  });
+});
+
+describe('get', () => {
+  const API_KEY = '25608a566fbb654ea959c1b1729e370d';
+  const MODEL = 'page';
+  const AUTH_TOKEN = '82202e99f9fb4ed1da5940f7fa191e72';
+
+  let khulnasoft: Khulnasoft;
+
+  beforeEach(() => {
+    khulnasoft = new Khulnasoft(API_KEY, undefined, undefined, false, AUTH_TOKEN, 'v3');
+    const khulnasoftSubject = new BehaviorSubject<KhulnasoftContent[]>([]);
+    khulnasoftSubject.next = jest.fn(() => {});
+    khulnasoft.observersByKey[MODEL] = khulnasoftSubject;
+    khulnasoft['makeFetchApiCall'] = jest.fn((url: string) => {
+      return Promise.resolve({
+        json: () => {
+          return Promise.resolve({});
+        },
+      });
+    });
+  });
+
+  test('hits content url with includeRefs=false when passed in params and noTraverse=false', async () => {
+    const expectedModel = 'page';
+
+    const includeRefs = false;
+
+    khulnasoft.apiEndpoint = 'content';
+    khulnasoft.getLocation = jest.fn(() => ({
+      search: `?khulnasoft.params=includeRefs%3D${includeRefs}`,
+    }));
+
+    await khulnasoft.get(expectedModel, {});
+
+    expect(khulnasoft['makeFetchApiCall']).toBeCalledTimes(1);
+    expect(khulnasoft['makeFetchApiCall']).toBeCalledWith(
+      `https://cdn.khulnasoft.com/api/v3/content/${expectedModel}?omit=meta.componentsUsed&apiKey=${API_KEY}&noTraverse=false&userAttributes=%7B%22device%22%3A%22desktop%22%7D&includeRefs=${includeRefs}&model=%22${expectedModel}%22`,
+      { headers: { Authorization: `Bearer ${AUTH_TOKEN}` } }
+    );
+  });
+
+  test('hits content url with includeRefs=true and noTraverse=false by default', async () => {
+    const expectedModel = 'page';
+
+    khulnasoft.apiEndpoint = 'content';
+    await khulnasoft.get(expectedModel, {});
+
+    expect(khulnasoft['makeFetchApiCall']).toBeCalledTimes(1);
+    expect(khulnasoft['makeFetchApiCall']).toBeCalledWith(
+      `https://cdn.khulnasoft.com/api/v3/content/${expectedModel}?omit=meta.componentsUsed&apiKey=${API_KEY}&noTraverse=false&userAttributes=%7B%22urlPath%22%3A%22%2F%22%2C%22host%22%3A%22localhost%22%2C%22device%22%3A%22desktop%22%7D&includeRefs=true&model=%22${expectedModel}%22`,
+      { headers: { Authorization: `Bearer ${AUTH_TOKEN}` } }
+    );
+  });
+
+  test('hits content url with includeRefs=false when passed in options and noTraverse=false by default', async () => {
+    const expectedModel = 'page';
+
+    khulnasoft.apiEndpoint = 'content';
+    await khulnasoft.get(expectedModel, {
+      includeRefs: false,
+    });
+
+    expect(khulnasoft['makeFetchApiCall']).toBeCalledTimes(1);
+    expect(khulnasoft['makeFetchApiCall']).toBeCalledWith(
+      `https://cdn.khulnasoft.com/api/v3/content/${expectedModel}?omit=meta.componentsUsed&apiKey=${API_KEY}&noTraverse=false&userAttributes=%7B%22urlPath%22%3A%22%2F%22%2C%22host%22%3A%22localhost%22%2C%22device%22%3A%22desktop%22%7D&includeRefs=false&model=%22${expectedModel}%22`,
+      { headers: { Authorization: `Bearer ${AUTH_TOKEN}` } }
+    );
+  });
+});
+
+describe('getAll', () => {
+  const API_KEY = '25608a566fbb654ea959c1b1729e370d';
+  const MODEL = 'page';
+  const AUTH_TOKEN = '82202e99f9fb4ed1da5940f7fa191e72';
+
+  let khulnasoft: Khulnasoft;
+
+  beforeEach(() => {
+    khulnasoft = new Khulnasoft(API_KEY, undefined, undefined, false, AUTH_TOKEN, 'v3');
+    const khulnasoftSubject = new BehaviorSubject<KhulnasoftContent[]>([]);
+    khulnasoftSubject.next = jest.fn(() => {});
+    khulnasoft.observersByKey[MODEL] = khulnasoftSubject;
+    khulnasoft['makeFetchApiCall'] = jest.fn((url: string) => {
+      return Promise.resolve({
+        json: () => {
+          return Promise.resolve({});
+        },
+      });
+    });
+  });
+
+  test('hits content url with includeRefs=false when passed in params and noTraverse=true by default', async () => {
+    const expectedModel = 'page';
+
+    const includeRefs = false;
+
+    khulnasoft.apiEndpoint = 'content';
+    khulnasoft.getLocation = jest.fn(() => ({
+      search: `?khulnasoft.params=includeRefs%3D${includeRefs}`,
+    }));
+
+    await khulnasoft.getAll(expectedModel, {});
+
+    expect(khulnasoft['makeFetchApiCall']).toBeCalledTimes(1);
+    expect(khulnasoft['makeFetchApiCall']).toBeCalledWith(
+      `https://cdn.khulnasoft.com/api/v3/content/${expectedModel}?omit=meta.componentsUsed&apiKey=${API_KEY}&noTraverse=true&userAttributes=%7B%22device%22%3A%22desktop%22%7D&includeRefs=${includeRefs}&limit=30&model=%22${expectedModel}%22`,
+      { headers: { Authorization: `Bearer ${AUTH_TOKEN}` } }
+    );
+  });
+
+  test('hits content url with includeRefs=true and noTraverse=true by default', async () => {
+    const expectedModel = 'page';
+
+    khulnasoft.apiEndpoint = 'content';
+    await khulnasoft.getAll(expectedModel, {});
+
+    expect(khulnasoft['makeFetchApiCall']).toBeCalledTimes(1);
+    expect(khulnasoft['makeFetchApiCall']).toBeCalledWith(
+      `https://cdn.khulnasoft.com/api/v3/content/${expectedModel}?omit=meta.componentsUsed&apiKey=${API_KEY}&noTraverse=true&userAttributes=%7B%22urlPath%22%3A%22%2F%22%2C%22host%22%3A%22localhost%22%2C%22device%22%3A%22desktop%22%7D&includeRefs=true&limit=30&model=%22${expectedModel}%22`,
+      { headers: { Authorization: `Bearer ${AUTH_TOKEN}` } }
+    );
+  });
+
+  test('hits content url with includeRefs=false when passed in options and noTraverse=true by default', async () => {
+    const expectedModel = 'page';
+
+    khulnasoft.apiEndpoint = 'content';
+    await khulnasoft.getAll(expectedModel, {
+      includeRefs: false,
+    });
+
+    expect(khulnasoft['makeFetchApiCall']).toBeCalledTimes(1);
+    expect(khulnasoft['makeFetchApiCall']).toBeCalledWith(
+      `https://cdn.khulnasoft.com/api/v3/content/${expectedModel}?omit=meta.componentsUsed&apiKey=${API_KEY}&noTraverse=true&userAttributes=%7B%22urlPath%22%3A%22%2F%22%2C%22host%22%3A%22localhost%22%2C%22device%22%3A%22desktop%22%7D&includeRefs=false&limit=30&model=%22${expectedModel}%22`,
+      { headers: { Authorization: `Bearer ${AUTH_TOKEN}` } }
+    );
+  });
+});

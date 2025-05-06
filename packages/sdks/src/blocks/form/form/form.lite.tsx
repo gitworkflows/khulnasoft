@@ -1,0 +1,388 @@
+import {
+  Show,
+  useMetadata,
+  useRef,
+  useStore,
+  useTarget,
+} from '@khulnasoft.com/mitosis';
+import Blocks from '../../../components/blocks/blocks.lite.jsx';
+
+import { getEnv } from '../../../functions/get-env.js';
+import { get } from '../../../functions/get.js';
+import { isEditing } from '../../../functions/is-editing.js';
+import { set } from '../../../functions/set.js';
+import type { KhulnasoftBlock } from '../../../types/khulnasoft-block.js';
+import type {
+  KhulnasoftComponentsProp,
+  KhulnasoftDataProps,
+  KhulnasoftLinkComponentProp,
+} from '../../../types/khulnasoft-props.js';
+import type { Dictionary } from '../../../types/typescript.js';
+import { filterAttrs } from '../../helpers.js';
+/**
+ * This import is used by the Svelte SDK. Do not remove.
+ */
+import { logFetch } from '../../../functions/log-fetch.js';
+import { setAttrs } from '../../helpers.js';
+
+export type FormProps = KhulnasoftDataProps &
+  KhulnasoftComponentsProp &
+  KhulnasoftLinkComponentProp & {
+    attributes?: any;
+    name?: string;
+    action?: string;
+    validate?: boolean;
+    method?: string;
+    sendSubmissionsTo?: string;
+    sendSubmissionsToEmail?: string;
+    sendWithJs?: boolean;
+    contentType?: string;
+    customHeaders?: { [key: string]: string };
+    successUrl?: string;
+    previewState?: FormState;
+    successMessage?: KhulnasoftBlock[];
+    errorMessage?: KhulnasoftBlock[];
+    sendingMessage?: KhulnasoftBlock[];
+    resetFormOnSubmit?: boolean;
+    errorMessagePath?: string;
+    children?: any;
+  };
+
+export type FormState = 'unsubmitted' | 'sending' | 'success' | 'error';
+
+useMetadata({
+  rsc: {
+    componentType: 'client',
+  },
+});
+
+export default function FormComponent(props: FormProps) {
+  const state = useStore({
+    formState: 'unsubmitted' as FormState,
+    // TODO: separate response and error?
+    responseData: null as any,
+    formErrorMessage: '',
+    mergeNewRootState(newData: Dictionary<any>) {
+      const combinedState = {
+        ...props.khulnasoftContext.value.rootState,
+        ...newData,
+      };
+
+      if (props.khulnasoftContext.value.rootSetState) {
+        props.khulnasoftContext.value.rootSetState?.(combinedState);
+      } else {
+        props.khulnasoftContext.value.rootState = combinedState;
+      }
+    },
+    submissionState(): FormState {
+      return (isEditing() && props.previewState) || state.formState;
+    },
+    onSubmit(event: any) {
+      const sendWithJsProp =
+        props.sendWithJs || props.sendSubmissionsTo === 'email';
+
+      if (props.sendSubmissionsTo === 'zapier') {
+        event.preventDefault();
+      } else if (sendWithJsProp) {
+        if (!(props.action || props.sendSubmissionsTo === 'email')) {
+          event.preventDefault();
+          return;
+        }
+        event.preventDefault();
+
+        const el = event.currentTarget || event.target;
+        const headers = props.customHeaders || {};
+
+        let body: any;
+
+        const formData = new FormData(el);
+
+        // TODO: maybe support null
+        const formPairs: {
+          key: string;
+          value: File | boolean | number | string | FileList;
+        }[] = Array.from(el.querySelectorAll('input,select,textarea'))
+          .filter((el) => !!(el as HTMLInputElement).name)
+          .map((el) => {
+            let value: any;
+            const key = (el as HTMLImageElement).name;
+            if (el instanceof HTMLInputElement) {
+              if (el.type === 'radio') {
+                if (el.checked) {
+                  value = el.name;
+                  return { key, value };
+                }
+              } else if (el.type === 'checkbox') {
+                value = el.checked;
+              } else if (el.type === 'number' || el.type === 'range') {
+                const num = el.valueAsNumber;
+                if (!isNaN(num)) {
+                  value = num;
+                }
+              } else if (el.type === 'file') {
+                // TODO: one vs multiple files
+                value = el.files;
+              } else {
+                value = el.value;
+              }
+            } else {
+              value = (el as HTMLInputElement).value;
+            }
+
+            return { key, value };
+          });
+
+        let formContentType = props.contentType;
+
+        if (props.sendSubmissionsTo === 'email') {
+          formContentType = 'multipart/form-data';
+        }
+
+        Array.from(formPairs).forEach(({ value }) => {
+          if (
+            value instanceof File ||
+            (Array.isArray(value) && value[0] instanceof File) ||
+            value instanceof FileList
+          ) {
+            formContentType = 'multipart/form-data';
+          }
+        });
+
+        // TODO: send as urlEncoded or multipart by default
+        // because of ease of use and reliability in browser API
+        // for encoding the form?
+        if (formContentType !== 'application/json') {
+          body = formData;
+        } else {
+          // Json
+          const json = {};
+
+          Array.from(formPairs).forEach(({ value, key }) => {
+            set(json, key, value);
+          });
+
+          body = JSON.stringify(json);
+        }
+
+        if (formContentType && formContentType !== 'multipart/form-data') {
+          if (
+            /* Zapier doesn't allow content-type header to be sent from browsers */
+            !(sendWithJsProp && props.action?.includes('zapier.com'))
+          ) {
+            headers['content-type'] = formContentType;
+          }
+        }
+
+        const presubmitEvent = new CustomEvent('presubmit', {
+          detail: {
+            body,
+          },
+        });
+        if (formRef) {
+          formRef.dispatchEvent(presubmitEvent);
+          if (presubmitEvent.defaultPrevented) {
+            return;
+          }
+        }
+
+        state.formState = 'sending';
+
+        if (
+          props.sendSubmissionsTo === 'email' &&
+          (props.sendSubmissionsToEmail === 'your@email.com' ||
+            !props.sendSubmissionsToEmail)
+        ) {
+          const message =
+            'SubmissionsToEmail is required when sendSubmissionsTo is set to email';
+          console.error(message);
+          state.formState = 'error';
+          state.mergeNewRootState({
+            formErrorMessage: message,
+          });
+          return;
+        }
+
+        const formUrl = `${
+          getEnv() === 'dev' ? 'http://localhost:5000' : 'https://khulnasoft.com'
+        }/api/v1/form-submit?apiKey=${props.khulnasoftContext.value.apiKey}&to=${btoa(
+          props.sendSubmissionsToEmail || ''
+        )}&name=${encodeURIComponent(props.name || '')}`;
+
+        const url =
+          props.sendSubmissionsTo === 'email'
+            ? formUrl
+            : props.action!; /* TODO: throw error if no action URL */
+
+        logFetch(url);
+
+        fetch(url, {
+          body,
+          headers,
+          method: props.method || 'post',
+        }).then(
+          async (res) => {
+            let body;
+            const contentType = res.headers.get('content-type');
+            if (contentType && contentType.indexOf('application/json') !== -1) {
+              body = await res.json();
+            } else {
+              body = await res.text();
+            }
+
+            if (!res.ok) {
+              const submitErrorEvent = new CustomEvent('submit:error', {
+                detail: {
+                  error: body,
+                  status: res.status,
+                },
+              });
+
+              if (formRef?.nativeElement) {
+                formRef?.nativeElement.dispatchEvent(submitErrorEvent);
+                if (submitErrorEvent.defaultPrevented) {
+                  return;
+                }
+              }
+              state.responseData = body;
+              state.formState = 'error';
+
+              let message = props.errorMessagePath
+                ? get(body, props.errorMessagePath)
+                : body.message || body.error || body;
+
+              if (typeof message !== 'string') {
+                message = JSON.stringify(message);
+              }
+
+              state.formErrorMessage = message;
+              state.mergeNewRootState({
+                formErrorMessage: message,
+              });
+
+              return;
+            }
+
+            state.responseData = body;
+            state.formState = res.ok ? 'success' : 'error';
+
+            if (res.ok) {
+              const submitSuccessEvent = new CustomEvent('submit:success', {
+                detail: {
+                  res,
+                  body,
+                },
+              });
+              if (formRef) {
+                formRef.dispatchEvent(submitSuccessEvent);
+                if (submitSuccessEvent.defaultPrevented) {
+                  return;
+                }
+                /* TODO: option to turn this on/off? */
+                if (props.resetFormOnSubmit !== false) {
+                  formRef.reset();
+                }
+              }
+
+              /* TODO: client side route event first that can be preventDefaulted */
+              if (props.successUrl) {
+                if (formRef) {
+                  const event = new CustomEvent('route', {
+                    detail: {
+                      url: props.successUrl,
+                    },
+                  });
+                  formRef.dispatchEvent(event);
+                  if (!event.defaultPrevented) {
+                    location.href = props.successUrl;
+                  }
+                } else {
+                  location.href = props.successUrl;
+                }
+              }
+            }
+          },
+          (err) => {
+            const submitErrorEvent = new CustomEvent('submit:error', {
+              detail: {
+                error: err,
+              },
+            });
+            if (formRef) {
+              formRef.dispatchEvent(submitErrorEvent);
+              if (submitErrorEvent.defaultPrevented) {
+                return;
+              }
+            }
+
+            state.responseData = err;
+            state.formState = 'error';
+          }
+        );
+      }
+    },
+  });
+
+  const formRef = useRef<HTMLFormElement>();
+
+  return (
+    <form
+      validate={props.validate}
+      ref={formRef}
+      action={!props.sendWithJs && props.action}
+      method={props.method}
+      name={props.name}
+      onSubmit={(event) => state.onSubmit(event)}
+      {...useTarget({
+        qwik: {
+          'preventdefault:submit': true,
+        },
+        default: {},
+      })}
+      {...useTarget({
+        vue: filterAttrs(props.attributes, 'v-on:', false),
+        svelte: filterAttrs(props.attributes, 'on:', false),
+        default: {},
+      })}
+      {...useTarget({
+        vue: filterAttrs(props.attributes, 'v-on:', true),
+        svelte: filterAttrs(props.attributes, 'on:', true),
+        default: props.attributes,
+      })}
+    >
+      {props.children}
+
+      <Show when={state.submissionState() === 'error'}>
+        <Blocks
+          path="errorMessage"
+          blocks={props.errorMessage!}
+          context={props.khulnasoftContext}
+        />
+      </Show>
+
+      <Show when={state.submissionState() === 'sending'}>
+        <Blocks
+          path="sendingMessage"
+          blocks={props.sendingMessage!}
+          context={props.khulnasoftContext}
+        />
+      </Show>
+
+      <Show when={state.submissionState() === 'error' && state.responseData}>
+        <pre
+          class="khulnasoft-form-error-text"
+          css={{ padding: '10px', color: 'red', textAlign: 'center' }}
+        >
+          {JSON.stringify(state.responseData, null, 2)}
+        </pre>
+      </Show>
+
+      <Show when={state.submissionState() === 'success'}>
+        <Blocks
+          path="successMessage"
+          blocks={props.successMessage!}
+          context={props.khulnasoftContext}
+        />
+      </Show>
+    </form>
+  );
+}

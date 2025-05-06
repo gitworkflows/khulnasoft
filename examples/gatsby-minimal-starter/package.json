@@ -1,0 +1,26 @@
+{
+  "name": "gatsby-khulnasoft-example",
+  "version": "1.0.0",
+  "private": true,
+  "description": "gatsby-khulnasoft-example",
+  "keywords": [
+    "gatsby"
+  ],
+  "scripts": {
+    "develop": "gatsby develop",
+    "start": "gatsby develop",
+    "build": "gatsby build",
+    "serve": "gatsby serve",
+    "clean": "gatsby clean"
+  },
+  "dependencies": {
+    "@khulnasoft.com/gatsby": "^3.0.3",
+    "@khulnasoft.com/widgets": "^1.2.24",
+    "@mui/material": "^5.14.14",
+    "gatsby": "^5.12.4",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-helmet": "^6.1.0",
+    "react-parallax": "^3.5.1"
+  }
+}

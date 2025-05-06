@@ -1,0 +1,13 @@
+{
+  "name": "@khulnasoft.com/app-context",
+  "version": "1.0.1-1",
+  "description": "Khulnasoft.com plugin application context",
+  "main": "index.js",
+  "scripts": {
+    "release:dev": "npm version prerelease --no-git-tag-version && ALLOW_PUBLISH=true npm publish --tag dev"
+  },
+  "devDependencies": {
+    "@khulnasoft.com/sdk": "^1.1.29",
+    "react": "^18.0.0"
+  }
+}

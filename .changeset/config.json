@@ -1,0 +1,27 @@
+{
+  "$schema": "https://unpkg.com/@changesets/config@3.0.0/schema.json",
+  "changelog": "@changesets/cli/changelog",
+  "commit": false,
+  "linked": [
+    [
+      "@khulnasoft.com/sdk-react",
+      "@khulnasoft.com/sdk-vue",
+      "@khulnasoft.com/sdk-svelte",
+      "@khulnasoft.com/sdk-react-native",
+      "@khulnasoft.com/sdk-solid"
+    ],
+    ["@khulnasoft.com/sdk-react-nextjs", "@khulnasoft.com/sdk-qwik", "@khulnasoft.com/sdk-angular"]
+  ],
+  "fixed": [],
+  "access": "public",
+  "baseBranch": "main",
+  "updateInternalDependencies": "patch",
+  "ignore": [
+    "@e2e/*",
+    "@e2e/gen1-next14-pages",
+    "@e2e/gen1-next15-app",
+    "@e2e/gen1-remix",
+    "@e2e/gen1-react",
+    "@snippet/*"
+  ]
+}

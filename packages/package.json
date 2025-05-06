@@ -1,0 +1,14 @@
+{
+  "name": "@khulnasoft.com/packages",
+  "description": "This mono-repo includes the new SDKs and their integration tests.",
+  "private": true,
+  "scripts": {
+    "ci:changeset": "changeset status --since=main",
+    "fix-core-version": "yarn workspace @khulnasoft.com/react fix-core-version",
+    "build:sdks": "yarn g:nx run-many --skip-nx-cache -t build --projects=@khulnasoft.com/sdk-\\*,@khulnasoft.com/react",
+    "ci:release": "yarn build:sdks && yarn run fix-core-version && yarn g:changeset publish"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.27.1"
+  }
+}

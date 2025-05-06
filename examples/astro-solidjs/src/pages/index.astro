@@ -1,0 +1,21 @@
+---
+import Layout from '../components/Layout.astro';
+
+import { fetchOneEntry } from '@khulnasoft.com/sdk-solid';
+import App from '../components/App'
+
+const apiKey = 'f1a790f8c3204b3b8c5c1795aeac4660';
+
+const khulnasoftContent = await fetchOneEntry({
+	model: 'page',
+	apiKey,
+	userAttributes: {
+		urlPath: '/',
+	},
+})
+
+---
+
+<Layout title={khulnasoftContent?.data?.title || "Welcome to Astro." }>
+	<App client:visible khulnasoftContent={khulnasoftContent} />
+</Layout>
