@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@khulnasoft.com/react": "workspace:*",
-    "@khulnasoft.com/widgets": "^1.2.24",
+    "@khulnasoft.com/widgets": "workspace:*",
     "@sdk/tests": "workspace:*",
     "next": "14.1.1",
     "react": "^18",

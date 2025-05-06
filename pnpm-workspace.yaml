@@ -1,0 +1,8 @@
+packages:
+  - 'packages/*'
+  - 'packages/react-tests/*'
+  - 'packages/sdks/*'
+  - 'packages/sdks-tests/*'
+  - 'packages/sdks/e2e/*'
+  - 'packages/sdks/snippets/*'
+  - 'packages/sdks/output/*'

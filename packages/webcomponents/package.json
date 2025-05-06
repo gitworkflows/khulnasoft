@@ -90,7 +90,7 @@
     ]
   },
   "devDependencies": {
-    "@khulnasoft.com/block-publish": "^1.1.2",
+    "@khulnasoft.com/block-publish": "npm:@builder.io/block-publish",
     "@commitlint/cli": "^8.2.0",
     "@commitlint/config-conventional": "^8.2.0",
     "@rollup/plugin-alias": "^2.2.0",
