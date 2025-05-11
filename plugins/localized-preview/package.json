@@ -79,7 +79,7 @@
   "dependencies": {
     "@khulnasoft.com/app-context": "^1.0.0",
     "@khulnasoft.com/commerce-plugin-tools": "^0.2.0",
-    "@khulnasoft.com/sdk": "^1.1.29"
+    "@khulnasoft.com/sdk": "workspace:*"
   },
   "devDependencies": {
     "@commitlint/cli": "^7.1.2",

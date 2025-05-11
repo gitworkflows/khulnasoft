@@ -67,7 +67,7 @@ if (typeof self !== 'undefined') {
     if (data && data.type === 'khulnasoft.loadPlugin') {
       console.log('loadPluginMessage', event.data);
 
-      const plugin = '@khulnasoft.com/plugin-cloudinary';
+      const plugin = 'khulnasoft.com/plugin-cloudinary';
       const pluginUrl = plugin.startsWith('http') ? plugin : 'https://unpkg.com/' + plugin;
       system
         .import(pluginUrl)
@@ -90,7 +90,7 @@ if (typeof self !== 'undefined') {
 // reactDom.render(React.createElement('div', {}, 'hello there'), document.body)
 
 setTimeout(() => {
-  const plugin = '@khulnasoft.com/plugin-cloudinary';
+  const plugin = 'khulnasoft.com/plugin-cloudinary';
   const pluginUrl = plugin.startsWith('http') ? plugin : 'https://unpkg.com/' + plugin;
   system
     // TODO: why is systemjs loading/returning React as output here??

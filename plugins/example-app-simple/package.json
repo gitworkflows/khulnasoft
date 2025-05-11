@@ -115,7 +115,7 @@
     "webpack-dev-server": "^3.11.0"
   },
   "dependencies": {
-    "@khulnasoft.com/sdk": "^1.1.29",
+    "@khulnasoft.com/sdk": "workspace:*",
     "@emotion/core": "^10.0.22",
     "@emotion/styled": "^10.0.23",
     "@material-ui/core": "^3.9.2",

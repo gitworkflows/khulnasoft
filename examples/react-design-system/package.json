@@ -19,7 +19,7 @@
   "main": "src/index.js",
   "dependencies": {
     "@khulnasoft.com/react": "^2.0.4",
-    "@khulnasoft.com/sdk": "^1.1.29",
+    "@khulnasoft.com/sdk": "workspace:*",
     "@khulnasoft.com/widgets": "^1.2.23",
     "@material-ui/core": "^4.11.0",
     "@material-ui/icons": "^4.9.1",
